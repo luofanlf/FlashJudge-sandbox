@@ -3,6 +3,8 @@ package com.luofan.flashjudge_codesandbox.utils;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 
+import org.springframework.util.StopWatch;
+
 import com.luofan.flashjudge_codesandbox.model.ExecuteMessage;
 
 /**
@@ -19,6 +21,8 @@ public class ProcessUtils {
     public static ExecuteMessage runProcess(Process process,String opName){
         ExecuteMessage message = new ExecuteMessage();
         try{
+            StopWatch stopWatch = new StopWatch();
+            stopWatch.start();
             int exitValue = process.waitFor();
             message.setExitValue(exitValue);
             //正常退出
@@ -54,6 +58,8 @@ public class ProcessUtils {
                 message.setMessage(output.toString());
                 message.setErrorMessage(errorOutput.toString());
             }
+            stopWatch.stop();
+            message.setTime(stopWatch.getLastTaskTimeMillis());
         }catch(Exception e){
             e.printStackTrace();
         }
