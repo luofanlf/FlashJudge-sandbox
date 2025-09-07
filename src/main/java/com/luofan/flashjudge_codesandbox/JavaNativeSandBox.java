@@ -1,12 +1,17 @@
 package com.luofan.flashjudge_codesandbox;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
 import com.luofan.flashjudge_codesandbox.model.ExecuteCodeRequest;
 import com.luofan.flashjudge_codesandbox.model.ExecuteCodeResponse;
+import com.luofan.flashjudge_codesandbox.model.ExecuteMessage;
+import com.luofan.flashjudge_codesandbox.utils.ProcessUtils;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.io.resource.ResourceUtil;
@@ -19,7 +24,7 @@ public class JavaNativeSandBox implements CodeSandBox {
     public static void main(String[] args) {
         JavaNativeSandBox javaNativeSandBox = new JavaNativeSandBox();
         ExecuteCodeRequest executeCodeRequest = new ExecuteCodeRequest();
-        executeCodeRequest.setInput(Arrays.asList("1", "2"));
+        executeCodeRequest.setInput(Arrays.asList("1 2", "2 3"));
         String code = ResourceUtil.readUtf8Str("testcode/simpleComputeArgs/Main.java");
         executeCodeRequest.setCode(code);
         executeCodeRequest.setLanguage("java");
@@ -29,7 +34,7 @@ public class JavaNativeSandBox implements CodeSandBox {
     
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
-        List<String> input = executeCodeRequest.getInput();
+        List<String> inputList = executeCodeRequest.getInput();
         String code = executeCodeRequest.getCode();
         String language = executeCodeRequest.getLanguage();
 
@@ -41,10 +46,33 @@ public class JavaNativeSandBox implements CodeSandBox {
             FileUtil.mkdir(globalCodePathName);
         }
 
-        //存放用户代码
+        //1.存放用户代码
         String userCodePathName = globalCodePathName + File.separator + UUID.randomUUID().toString();
         String userCodeFilePathName = userCodePathName + File.separator + GLOBAL_JAVA_CLASS_NAME;
-        FileUtil.writeUtf8String(code, userCodeFilePathName);
+        File userCodeFile = FileUtil.writeUtf8String(code, userCodeFilePathName);
+
+        //2.编译用户代码
+        String compileCmd = String.format("javac -encoding UTF-8 %s", userCodeFile.getAbsolutePath());
+        try {
+            Process process = Runtime.getRuntime().exec(compileCmd);
+            ExecuteMessage message = ProcessUtils.runProcess(process, "编译");
+            System.out.println(message);
+        } catch (Exception e) {
+            throw new RuntimeException("编译用户代码失败", e);
+        }
+        //3.运行用户代码
+        for(String inputArgs : inputList){
+            String runCmd = String.format("java -cp %s Main %s", userCodePathName, inputArgs);
+            try {
+                Process process = Runtime.getRuntime().exec(runCmd);
+                ExecuteMessage message = ProcessUtils.runProcess(process, "执行");
+                System.out.println(message);
+            }catch (Exception e) {
+                throw new RuntimeException("运行用户代码失败", e);
+            }
+        }
+        
+        
 
         return null;
     }
