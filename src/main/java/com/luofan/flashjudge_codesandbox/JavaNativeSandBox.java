@@ -1,15 +1,11 @@
 package com.luofan.flashjudge_codesandbox;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-import org.springframework.util.StopWatch;
 
 import com.luofan.flashjudge_codesandbox.model.ExecuteCodeRequest;
 import com.luofan.flashjudge_codesandbox.model.ExecuteCodeResponse;
@@ -20,17 +16,33 @@ import com.luofan.flashjudge_codesandbox.utils.ProcessUtils;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.io.resource.ResourceUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.dfa.FoundWord;
+import cn.hutool.dfa.WordTree;
 
 public class JavaNativeSandBox implements CodeSandBox {
 
     private static final String GLOBAL_CODE_DIR_NAME = "tmpCode";
     private static final String GLOBAL_JAVA_CLASS_NAME = "Main.java";
 
+    private static final long TIME_OUT = 30000L;
+
+    private static final List<String> BLACK_LIST = Arrays.asList("Files","exec");
+
+    private static final WordTree WORD_TREE;
+
+    private static final String SECURITY_MANAGER_PATH = "/Users/luofan/code/flashoj-codesandbox/src/main/resources/security";
+    
+    //初始化wordtree来匹配黑名单中的命令
+    static{
+        WORD_TREE = new WordTree();
+        WORD_TREE.addWords(BLACK_LIST);
+    }
+
     public static void main(String[] args) {
         JavaNativeSandBox javaNativeSandBox = new JavaNativeSandBox();
         ExecuteCodeRequest executeCodeRequest = new ExecuteCodeRequest();
         executeCodeRequest.setInput(Arrays.asList("1 2", "2 3"));
-        String code = ResourceUtil.readUtf8Str("testcode/simpleComputeArgs/Main.java");
+        String code = ResourceUtil.readUtf8Str("testcode/execTest/Main.java");
         executeCodeRequest.setCode(code);
         executeCodeRequest.setLanguage("java");
         ExecuteCodeResponse executeCodeResponse = javaNativeSandBox.executeCode(executeCodeRequest);
@@ -45,6 +57,19 @@ public class JavaNativeSandBox implements CodeSandBox {
 
         String userDir = System.getProperty("user.dir");
         String globalCodePathName = userDir + File.separator + GLOBAL_CODE_DIR_NAME;
+
+        //校验代码
+        FoundWord foundWord = WORD_TREE.matchWord(code);
+        if(foundWord!=null){
+            System.out.println("检测到危险代码: " + foundWord.getFoundWord());
+            ExecuteCodeResponse errorResponse = new ExecuteCodeResponse();
+            errorResponse.setMessage("代码包含危险操作: " + foundWord.getFoundWord());
+            errorResponse.setOutput(new ArrayList<>());
+            errorResponse.setStatus("fail");
+            errorResponse.setJudgeInfo(new JudgeInfo());
+            return errorResponse;
+        }
+
 
         //判断全局代码目录是否存在，不存在则创建
         if(!FileUtil.exist(globalCodePathName)){
@@ -68,9 +93,21 @@ public class JavaNativeSandBox implements CodeSandBox {
         //3.运行用户代码
         List<ExecuteMessage> messageList = new ArrayList<>();
         for(String inputArgs : inputList){
-            String runCmd = String.format("java -cp %s Main %s", userCodePathName, inputArgs);
+
+            String runCmd = String.format("java -Xmx256m -Djava.security.manager=MySecurityManager -cp %s:%s Main %s", userCodePathName, SECURITY_MANAGER_PATH, inputArgs);
             try {
                 Process process = Runtime.getRuntime().exec(runCmd);
+                // start a new thread to execute timeout
+                Thread timeoutThread = new Thread(() -> {
+                    try{
+                        Thread.sleep(TIME_OUT);
+                        System.out.println("time out,interrupt the execution");
+                        process.destroyForcibly();
+                    }catch(InterruptedException e){
+          
+                    }    
+                });
+                timeoutThread.start();
                 ExecuteMessage message = ProcessUtils.runProcess(process, "执行");
                 System.out.println(message);
                 messageList.add(message);
